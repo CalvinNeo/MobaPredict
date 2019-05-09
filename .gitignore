@@ -46,6 +46,9 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+checkpoint/
+dota-2-matches/*
+test_match
 
 # Translations
 *.mo
