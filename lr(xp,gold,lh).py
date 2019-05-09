@@ -4,6 +4,7 @@ import itertools
 import torch
 from torchvision import transforms as T
 import matplotlib.pyplot as plt
+import pickle
 
 #          0           1           2                     3                  4   \
 # match_id  start_time  duration(s)  tower_status_radiant  tower_status_dire   
@@ -12,9 +13,8 @@ import matplotlib.pyplot as plt
 #             9               10              11       12  
 # radiant_win  negative_votes  positive_votes  cluster  
 
-THRES = 600
+THRES = 2000
 
-# https://www.kaggle.com/devinanzelmo/dota-2-matches
 chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 10)
 chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
 d_match = pd.concat(chunks)
@@ -79,9 +79,10 @@ def make_dataset(S, T):
 
     # print Xs.mean()
     # Normalize
-    Xs = (Xs - Xs.mean()) / (Xs.max() - Xs.min())
-    # print Xs.mean()
-    return Xs, Ys
+    Mean = Xs.mean()
+    Range = Xs.max() - Xs.min()
+    Xs = (Xs - Mean) / Range
+    return Xs, Ys, Mean, Range
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
@@ -95,8 +96,8 @@ class LR(torch.nn.Module):
         y_pred = self.sigmoid(self.linear(x))
         return y_pred
 
-def Train():
-    Xs, Ys = make_dataset(0, 500)
+def Train(MAXN):
+    Xs, Ys, Mean, Range = make_dataset(0, MAXN)
 
     model = LR(3 * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
@@ -107,7 +108,7 @@ def Train():
     print x_data.size()
     print y_data.size()
 
-    for epoch in range(200):
+    for epoch in range(400):
         # Forward pass
         y_pred = model(x_data)
 
@@ -122,12 +123,15 @@ def Train():
         # update weights
         optimizer.step()
 
-    torch.save(model.state_dict(), 'checkpoint/params_lr.pkl')
+    torch.save(model.state_dict(), 'checkpoint/params_lrxgl.pkl')
+    pickle.dump([Mean, Range], open('checkpoint/params_lrxgl.norm', "w"))
 
 def test_match(matchid):
     model = LR(3 * W, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lr.pkl'))
+    model.load_state_dict(torch.load('checkpoint/params_lrxgl.pkl'))
+    [Mean, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
     TXs, Tys = generate_match(matchid)
+    TXs = (TXs - Mean) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -153,11 +157,12 @@ def add_vec(a, b):
         return c
 
 def test():
-    S = 510
-    E = 590
+    S = 1701
+    E = 1999
     toth = np.array([0]).reshape((-1, ))
     totl = np.array([0]).reshape((-1, ))
     for i in xrange(S, E):
+        print "PREDICT", i
         l = test_match(i)
         l = l.reshape((-1, ))
         totl = add_vec(l, totl)
@@ -168,5 +173,5 @@ def test():
     plt.plot(percent)
     plt.show()
 
-# Train()
-test()
+Train(1700)
+# test()
