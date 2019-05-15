@@ -7,49 +7,61 @@ import matplotlib.pyplot as plt
 import pickle
 
 THRES = 2000
-DIM = 4
+DIM = 5
+ITER = 400
+W = 3
 
-chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_match = pd.concat(chunks)
+dataset = ()
 
-chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_time = pd.concat(chunks)
+def init_dataset():
+    global dataset
+    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_match = pd.concat(chunks)
 
-chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_fight = pd.concat(chunks)
+    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_time = pd.concat(chunks)
 
-chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_fightpls = pd.concat(chunks)
+    chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_fight = pd.concat(chunks)
 
-print d_match.columns
-print d_match.shape
-print d_time.columns
-print d_time.shape
-print d_fight.columns
-print d_fight.shape
+    chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_fightpls = pd.concat(chunks)
+
+    print d_match.columns
+    print d_match.shape
+    print d_time.columns
+    print d_time.shape
+    print d_fight.columns
+    print d_fight.shape
+    print d_fightpls.columns
+    print d_fightpls.shape
+    dataset = (d_match, d_time, d_fight, d_fightpls)
+    return dataset
 
 def range_count(start, count, step):
     return range(start, start + step * count, step)
 
-W = 3
 
-def generate_die(match_id, i):
+def generate_die_trends(match_id, i):
+    global dataset
+    d_match, d_time, d_fight, d_fightpls = dataset
     this_match = d_fightpls.loc[d_fightpls['match_id']==match_id, ['match_id', 'player_slot', 'deaths']]
     this_fight = this_match.iloc[10*i:10*i+10, :].loc[:, ['deaths']]
-    # print this_fight
     die1, die2 = this_fight.iloc[0:5, :].sum(), this_fight.iloc[5:10, :].sum()
-    arr1 = np.arange(die1, 0, -1)
-    arr2 = np.arange(die2, 0, -1)
-    X1 = die1.values[0]
-    X2 = X1.item()
-    return die1.values[0].item(), die2.values[0].item(), arr1, arr2
+    die_count1 = die1.values[0].item()
+    die_count2 = die2.values[0].item()
+    arr1 = np.arange(die_count1, 0, -1)
+    arr2 = np.arange(die_count2, 0, -1)
+    return die_count1, die_count2, arr1, arr2
 
 def generate_deaths(match_id):
     # WARNING: No d_fight.loc[match_id, indexer]
+    global dataset
+    d_match, d_time, d_fight, d_fightpls = dataset
     indexer = ['match_id', 'deaths']
     get_indexer = indexer + ['start', 'end']
     all_timepoint = d_fight.loc[d_fight['match_id']==match_id, get_indexer]
@@ -57,21 +69,26 @@ def generate_deaths(match_id):
     all_timepoint['end'] = all_timepoint['end'].apply(lambda x: int(x / 60.0))
     ts1 = np.array([])
     ts2 = np.array([])
-    for i, row in all_timepoint.iterrows():
+    i = 0
+    # IMPORTANT iterrows (i, row), where i is global index
+    for index, row in all_timepoint.iterrows():
         # for all fight
-        die1, die2, arr1, arr2 = generate_die(match_id, i)
-        if row['end']+die1 >= len(ts1):
-            ts1.resize(row['end']+die1+1)
-        if row['end']+die2 >= len(ts2):
-            ts2.resize(row['end']+die2+1)
-        ts1[row['end']:row['end']+die1] = arr1
-        ts2[row['end']:row['end']+die2] = arr2
+        die_count1, die_count2, arr1, arr2 = generate_die_trends(match_id, i)
+        len1 = len(arr1); len2 = len(arr2)
+        if row['end']+len1 >= len(ts1):
+            ts1.resize(row['end']+len1+1)
+        if row['end']+len2 >= len(ts2):
+            ts2.resize(row['end']+len2+1)
+        ts1[row['end']:row['end']+len1] = arr1
+        ts2[row['end']:row['end']+len2] = arr2
+        i += 1
 
     # ts1 and ts2 may have mismatched length.
     return ts1, ts2
 
-
 def generate_match(matchid):
+    global dataset
+    d_match, d_time, d_fight, d_fightpls = dataset
     all_gold1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(2, 5, 3)].sum(axis = 1)
     all_lh1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(3, 5, 3)].sum(axis = 1)
     all_xp1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(4, 5, 3)].sum(axis = 1)
@@ -81,11 +98,13 @@ def generate_match(matchid):
     dies1, dies2 = generate_deaths(matchid)
     dies1.resize(len(all_gold1)); dies2.resize(len(all_gold1))
     dies1 = pd.Series(dies1); dies2 = pd.Series(dies2)
+    time_series = pd.Series(np.arange(len(all_gold1)))
 
     delta_gold = all_gold1 - all_gold2
     delta_lh = all_lh1 - all_lh2
     delta_xp = all_xp1 - all_xp2
     delta_die = dies1 - dies2
+    # print (delta_die == 0).all()
 
     radiant_win = d_match[d_match['match_id'] == matchid].loc[matchid, 'radiant_win']
     (R, ) =  delta_gold.shape # whose type is Series
@@ -94,7 +113,7 @@ def generate_match(matchid):
     xs = pd.DataFrame()
     ys = pd.DataFrame()
     for i in xrange(0, R - W):
-        x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], delta_die[i:i+W]])
+        x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], delta_die[i:i+W], time_series[i:i+W]])
         x = x.reset_index(drop=True) # Remove original index
         y = 1 if radiant_win else 0
         y = float(y)
@@ -114,15 +133,16 @@ def make_dataset(S, T):
         (xs, ys) = generate_match(i)
         Xs = pd.concat([Xs, xs])
         Ys = pd.concat([Ys, ys])
-    # print Xs.shape
-    # print Ys.shape
 
     # print Xs.mean()
     # Normalize
     Mean = Xs.mean()
     Range = Xs.max() - Xs.min()
-    Xs = (Xs - Mean) / Range
-    # print Xs.mean()
+    # print Mean
+    if Range.values[0].item() == 0:
+        Xs = Xs - Mean
+    else:
+        Xs = (Xs - Mean) / Range
     return Xs, Ys, Mean, Range
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
@@ -149,13 +169,13 @@ def Train(MAXN):
     print x_data.size()
     print y_data.size()
 
-    for epoch in range(400):
+    for epoch in range(ITER):
         # Forward pass
         y_pred = model(x_data)
 
         # Compute loss
         loss = criterion(y_pred, y_data)
-        print "====>", epoch, loss.data
+        # print "====>", epoch, loss.data
 
         # Zero gradients
         optimizer.zero_grad()
@@ -172,7 +192,10 @@ def test_match(matchid):
     model.load_state_dict(torch.load('checkpoint/params_lrkill.pkl'))
     [Mean, Range] = pickle.load(open('checkpoint/params_lrkill.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    TXs = (TXs - Mean) / Range
+    if Range.values[0].item() == 0:
+        TXs = TXs - Mean
+    else:
+        TXs = (TXs - Mean) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -197,9 +220,7 @@ def add_vec(a, b):
         c[:len(b)] += b
         return c
 
-def test():
-    S = 1701
-    E = 1999
+def test(S, E):
     toth = np.array([0]).reshape((-1, ))
     totl = np.array([0]).reshape((-1, ))
     for i in xrange(S, E):
@@ -210,9 +231,12 @@ def test():
         toth = add_vec(toth, np.ones(l.shape))
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
-    print percent
     plt.plot(percent)
-    plt.show()
+    plt.savefig("reskill.png")
+    return percent
 
-Train(1700)
-test()
+if __name__ == '__main__':
+    init_dataset()
+    print "dataset", dataset
+    Train(100)
+    test(110, 115)

@@ -6,36 +6,37 @@ from torchvision import transforms as T
 import matplotlib.pyplot as plt
 import pickle
 
-#          0           1           2                     3                  4   \
-# match_id  start_time  duration(s)  tower_status_radiant  tower_status_dire   
-#                      5                        6                 7          8   \
-# barracks_status_dire  barracks_status_radiant  first_blood_time  game_mode   
-#             9               10              11       12  
-# radiant_win  negative_votes  positive_votes  cluster  
-
 THRES = 2000
+DIM = 3
+ITER = 400
 
-chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_match = pd.concat(chunks)
+dataset = ()
 
-chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 10)
-chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
-d_time = pd.concat(chunks)
+def init_dataset():
+    global dataset
+    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_match = pd.concat(chunks)
 
-print d_match.columns
-print d_match.shape
-print d_time.columns
-print d_time.shape
-# print type(d_match['match_id'])
-# print d_match.dtypes
-# print d_time.dtypes
+    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
+    d_time = pd.concat(chunks)
+
+    print d_match.columns
+    print d_match.shape
+    print d_time.columns
+    print d_time.shape
+
+    dataset = (d_match, d_time)
+    return dataset
 
 def range_count(start, count, step):
     return range(start, start + step * count, step)
 
 W = 3
 def generate_match(matchid):
+    global dataset
+    d_match, d_time = dataset
     all_gold1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(2, 5, 3)].sum(axis = 1)
     all_lh1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(3, 5, 3)].sum(axis = 1)
     all_xp1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(4, 5, 3)].sum(axis = 1)
@@ -63,9 +64,6 @@ def generate_match(matchid):
 
     return xs, ys
 
-# (xs, ys) = generate_match(0)
-# print xs
-# print ys
 def make_dataset(S, T):
     Xs = pd.DataFrame()
     Ys = pd.DataFrame()
@@ -74,10 +72,7 @@ def make_dataset(S, T):
         (xs, ys) = generate_match(i)
         Xs = pd.concat([Xs, xs])
         Ys = pd.concat([Ys, ys])
-    # print Xs.shape
-    # print Ys.shape
 
-    # print Xs.mean()
     # Normalize
     Mean = Xs.mean()
     Range = Xs.max() - Xs.min()
@@ -99,7 +94,7 @@ class LR(torch.nn.Module):
 def Train(MAXN):
     Xs, Ys, Mean, Range = make_dataset(0, MAXN)
 
-    model = LR(3 * W, 1)
+    model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
     optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
 
@@ -108,7 +103,7 @@ def Train(MAXN):
     print x_data.size()
     print y_data.size()
 
-    for epoch in range(400):
+    for epoch in range(ITER):
         # Forward pass
         y_pred = model(x_data)
 
@@ -127,7 +122,7 @@ def Train(MAXN):
     pickle.dump([Mean, Range], open('checkpoint/params_lrxgl.norm', "w"))
 
 def test_match(matchid):
-    model = LR(3 * W, 1)
+    model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/params_lrxgl.pkl'))
     [Mean, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
     TXs, Tys = generate_match(matchid)
@@ -156,9 +151,7 @@ def add_vec(a, b):
         c[:len(b)] += b
         return c
 
-def test():
-    S = 1701
-    E = 1999
+def test(S, E):
     toth = np.array([0]).reshape((-1, ))
     totl = np.array([0]).reshape((-1, ))
     for i in xrange(S, E):
@@ -169,9 +162,12 @@ def test():
         toth = add_vec(toth, np.ones(l.shape))
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
-    print percent
     plt.plot(percent)
-    plt.show()
+    plt.savefig("resxgl.png")
+    return percent
 
-Train(1700)
-# test()
+if __name__ == '__main__':
+    init_dataset()
+    print "dataset", dataset
+# Train(1700)
+    test(1709, 1999)
