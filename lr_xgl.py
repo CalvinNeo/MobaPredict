@@ -74,10 +74,10 @@ def make_dataset(S, T):
         Ys = pd.concat([Ys, ys])
 
     # Normalize
-    Mean = Xs.mean()
+    Min = Xs.min()
     Range = Xs.max() - Xs.min()
-    Xs = (Xs - Mean) / Range
-    return Xs, Ys, Mean, Range
+    Xs = (Xs - Min) / Range
+    return Xs, Ys, Min, Range
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
@@ -92,7 +92,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(MAXN):
-    Xs, Ys, Mean, Range = make_dataset(0, MAXN)
+    Xs, Ys, Min, Range = make_dataset(0, MAXN)
 
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
@@ -119,14 +119,14 @@ def Train(MAXN):
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrxgl.pkl')
-    pickle.dump([Mean, Range], open('checkpoint/params_lrxgl.norm', "w"))
+    pickle.dump([Min, Range], open('checkpoint/params_lrxgl.norm', "w"))
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/params_lrxgl.pkl'))
-    [Mean, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
+    [Min, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    TXs = (TXs - Mean) / Range
+    TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)

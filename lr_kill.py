@@ -123,8 +123,6 @@ def generate_match(matchid):
     return xs, ys
 
 # (xs, ys) = generate_match(0)
-# print xs
-# print ys
 def make_dataset(S, T):
     Xs = pd.DataFrame()
     Ys = pd.DataFrame()
@@ -134,16 +132,15 @@ def make_dataset(S, T):
         Xs = pd.concat([Xs, xs])
         Ys = pd.concat([Ys, ys])
 
-    # print Xs.mean()
     # Normalize
-    Mean = Xs.mean()
+    Min = Xs.min()
     Range = Xs.max() - Xs.min()
-    # print Mean
-    if Range.values[0].item() == 0:
-        Xs = Xs - Mean
+    if np.any(Range.values == 0):
+        Xs = Xs - Min
     else:
-        Xs = (Xs - Mean) / Range
-    return Xs, Ys, Mean, Range
+        Xs = (Xs - Min) / Range
+    return Xs, Ys, Min, Range
+
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
@@ -158,7 +155,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(MAXN):
-    Xs, Ys, Mean, Range = make_dataset(0, MAXN)
+    Xs, Ys, Min, Range = make_dataset(0, MAXN)
 
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
@@ -185,17 +182,17 @@ def Train(MAXN):
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrkill.pkl')
-    pickle.dump([Mean, Range], open('checkpoint/params_lrkill.norm', "w"))
+    pickle.dump([Min, Range], open('checkpoint/params_lrkill.norm', "w"))
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/params_lrkill.pkl'))
-    [Mean, Range] = pickle.load(open('checkpoint/params_lrkill.norm', "r"))
+    [Min, Range] = pickle.load(open('checkpoint/params_lrkill.norm', "r"))
     TXs, Tys = generate_match(matchid)
     if Range.values[0].item() == 0:
-        TXs = TXs - Mean
+        TXs = TXs - Min
     else:
-        TXs = (TXs - Mean) / Range
+        TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)

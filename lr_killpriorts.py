@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pickle
 
 THRES = 2000
-DIM = 6
+DIM = 7
 ITER = 400
 W = 3
 
@@ -15,19 +15,19 @@ dataset = ()
 
 def init_dataset():
     global dataset
-    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_match = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_time = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_fight = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_fightpls = pd.concat(chunks)
 
@@ -114,9 +114,26 @@ def generate_deaths(match_id):
     # ts1 and ts2 may have mismatched length.
     return ts1, ts2
 
+def generate_hero_ts(match_id):
+    global dataset
+    d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
+    len_heros = len(d_heros) + 1
+    ts = pickle.load(open('checkpoint/params_lrprior.pos', "r"))
+    t1 = np.array([]); t2 = np.array([])
+    t1.resize(ts.shape[0]); t2.resize(ts.shape[0])
+
+    allh1 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] < 5]
+    allh2 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] >= 128]
+    for items in allh1['hero_id'].iteritems():
+        t1 += ts[:, items[1]]
+    for items in allh2['hero_id'].iteritems():
+        t2 += ts[:, items[1]]
+    return t1, t2
+
 def generate_match(matchid):
     global dataset
     d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
+    # Sum up all heros' xp/gold/lh
     all_gold1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(2, 5, 3)].sum(axis = 1)
     all_lh1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(3, 5, 3)].sum(axis = 1)
     all_xp1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(4, 5, 3)].sum(axis = 1)
@@ -130,6 +147,9 @@ def generate_match(matchid):
     time_series = pd.Series(np.arange(l))
     prior_rate = test_match_prior(matchid).item()
     prior_series = pd.Series([prior_rate] * l)
+    hts1, hts2 = generate_hero_ts(matchid)
+    print "SSSHAPE", hts1.shape, hts2.shape, l
+    priorts_series = pd.Series(hts1) - pd.Series(hts2)
 
     delta_gold = all_gold1 - all_gold2
     delta_lh = all_lh1 - all_lh2
@@ -139,19 +159,35 @@ def generate_match(matchid):
 
     radiant_win = d_match[d_match['match_id'] == matchid].loc[matchid, 'radiant_win']
     (R, ) =  delta_gold.shape # whose type is Series
+    assert R == l
     # xs = pd.DataFrame(columns = map(lambda i: "In" + str(i), range(3 * W)))
     # ys = pd.DataFrame(columns = ["T"])
     xs = pd.DataFrame()
     ys = pd.DataFrame()
+    txs = pd.DataFrame()
     for i in xrange(0, R - W):
         x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], 
-            delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W]])
+            delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W], priorts_series[i:i+W]])
+        tx = pd.concat([priorts_series[i:i+W]])
+        tx = tx.reset_index(drop=True)
+        assert not np.isnan(tx.values).any()
+        print "i===", i
+        print "shape", tx.shape
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            if i >= 90:
+                print tx
+                print txs
+        assert not np.isnan(txs.values).any()
+        txs = txs.append(tx, ignore_index=True)
         x = x.reset_index(drop=True) # Remove original index
         y = 1 if radiant_win else 0
         y = float(y)
         xs = xs.append(x, ignore_index=True)
         ys = ys.append(pd.Series(y), ignore_index=True)
 
+    assert not np.isnan(priorts_series.values).any()
+    assert not np.isnan(txs.values).any()
+    assert not np.isnan(xs.values).any()
     return xs, ys
 
 def make_dataset(S, T):
@@ -166,12 +202,20 @@ def make_dataset(S, T):
     # Normalize
     Min = Xs.min()
     Range = Xs.max() - Xs.min()
+    # print "Check==="
+    # print Range, Min
+    # print "Check===2"
+    # print np.any(Range.values==0)
+    # print np.isnan(Xs).any()
+    # print "Check===where"
     if np.any(Range.values == 0):
         Xs = Xs - Min
     else:
         Xs = (Xs - Min) / Range
+    # print "Check===3"
+    # print np.isnan(Xs).any()
     return Xs, Ys, Min, Range
-    
+
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
 class LR(torch.nn.Module):
@@ -184,8 +228,8 @@ class LR(torch.nn.Module):
         y_pred = self.sigmoid(self.linear(x))
         return y_pred
 
-def Train(MAXN):
-    Xs, Ys, Min, Range = make_dataset(0, MAXN)
+def Train(MAXN, S = 0):
+    Xs, Ys, Min, Range = make_dataset(S, MAXN)
 
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
@@ -217,13 +261,13 @@ def Train(MAXN):
         # update weights
         optimizer.step()
 
-    torch.save(model.state_dict(), 'checkpoint/params_lrkillprior.pkl')
-    pickle.dump([Min, Range], open('checkpoint/params_lrkillprior.norm', "w"))
+    torch.save(model.state_dict(), 'checkpoint/params_lrkillpriorts.pkl')
+    pickle.dump([Min, Range], open('checkpoint/params_lrkillpriorts.norm', "w"))
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lrkillprior.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/params_lrkillprior.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/params_lrkillpriorts.pkl'))
+    [Min, Range] = pickle.load(open('checkpoint/params_lrkillpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
     if Range.values[0].item() == 0:
         TXs = TXs - Min
@@ -265,10 +309,13 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    plt.savefig("reskillprior.png")
+    plt.savefig("reskillpriorts.png")
     return percent
 
 if __name__ == '__main__':
     init_dataset()
-    Train(100)
-    test(110, 115)
+    # Train(100)
+    # test(110, 115)
+    for i in xrange(1500, 1700):
+        X,Y = generate_hero_ts(0)
+        print X

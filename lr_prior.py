@@ -55,10 +55,35 @@ def make_dataset(S, T):
         Ys = Ys.append(pd.Series([y]), ignore_index=True)
 
     # Normalize
-    Mean = 0
+    Min = 0
     Range = 1
-    return Xs, Ys, Mean, Range
+    return Xs, Ys, Min, Range
 
+def generate_hero_time(S, T):
+        # if row['end']+len1 >= len(ts1):
+        #     ts1.resize(row['end']+len1+1)
+    d_players, d_match, d_heros = dataset
+    len_heros = len(d_heros) + 1
+    ts = np.array([])
+    initial_duration = 100
+    ts.resize((initial_duration, len_heros))
+    for match_id in xrange(S, T):
+        radiant_win = d_match.loc[d_match['match_id'] == match_id]['radiant_win'].bool()
+        duration = int(d_match.loc[d_match['match_id'] == match_id]['duration'].values[0].item() / 60)
+        if duration >= ts.shape[0]:
+            ts.resize((duration + 1, len_heros))
+        if radiant_win:
+            allh1 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] < 5]
+            for items in allh1['hero_id'].iteritems():
+                ts[duration, items[1]] += 1
+        else:
+            allh2 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] >= 128]
+            for items in allh2['hero_id'].iteritems():
+                ts[duration, items[1]] += 1
+    pickle.dump(ts * 1.0, open('checkpoint/params_lrprior.pos', "w"))
+    print np.sum(ts, axis = 1)
+    ts = ts * 1.0 / (T - S)
+    return ts
 
 class LR(torch.nn.Module):
     def __init__(self, in_dim, out):
@@ -71,7 +96,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(START, END):
-    Xs, Ys, Mean, Range = make_dataset(START, END)
+    Xs, Ys, Min, Range = make_dataset(START, END)
 
     d_players, d_match, d_heros = dataset
     len_heros = len(d_heros) + 1
@@ -101,16 +126,16 @@ def Train(START, END):
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrprior.pkl')
-    pickle.dump([Mean, Range], open('checkpoint/params_lrprior.norm', "w"))
+    pickle.dump([Min, Range], open('checkpoint/params_lrprior.norm', "w"))
 
 def test_match_prior(matchid):
     d_players, d_match, d_heros = dataset
     len_heros = len(d_heros) + 1
     model = LR(len_heros * 2, 1)
     model.load_state_dict(torch.load('checkpoint/params_lrprior.pkl'))
-    [Mean, Range] = pickle.load(open('checkpoint/params_lrprior.norm', "r"))
+    [Min, Range] = pickle.load(open('checkpoint/params_lrprior.norm', "r"))
     TXs, Tys = generate_hero(matchid)
-    TXs = (TXs - Mean) / Range
+    TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -138,5 +163,6 @@ def test(S, E):
 
 if __name__ == '__main__':
     init_dataset()
-    Train(35000, 45000)
+    # Train(35000, 45000)
     # print test(18001, 19990)
+    generate_hero_time(35000, 45000)
