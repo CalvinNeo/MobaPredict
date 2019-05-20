@@ -133,13 +133,12 @@ def make_dataset(S, T):
         Ys = pd.concat([Ys, ys])
 
     # Normalize
-    Min = Xs.min()
-    Range = Xs.max() - Xs.min()
-    if np.any(Range.values == 0):
-        Xs = Xs - Min
-    else:
-        Xs = (Xs - Min) / Range
-    return Xs, Ys, Min, Range
+    C = Xs.mean()
+    Range = Xs.max() - C
+    Range = Range.mask(Range == 0, Xs.max())
+    assert not np.any(Range.values == 0)
+    Xs = (Xs - C) / Range
+    return Xs, Ys, C, Range
 
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
@@ -167,18 +166,11 @@ def Train(MAXN):
     print y_data.size()
 
     for epoch in range(ITER):
-        # Forward pass
         y_pred = model(x_data)
-
-        # Compute loss
         loss = criterion(y_pred, y_data)
-        # print "====>", epoch, loss.data
-
-        # Zero gradients
+        print "====>", epoch, loss.data
         optimizer.zero_grad()
-        # perform backward pass
         loss.backward()
-        # update weights
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrkill.pkl')

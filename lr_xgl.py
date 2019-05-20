@@ -64,6 +64,23 @@ def generate_match(matchid):
 
     return xs, ys
 
+def norm_mat_min(Xs):
+    C = Xs.min()
+    Range = Xs.max() - C
+    Range = Range.mask(Range == 0, Xs.max())
+    assert not np.any(Range.values == 0)
+    Xs = (Xs - C) / Range
+    return Xs, C, Range
+
+def norm_mat_mean(Xs):
+    C = Xs.mean()
+    Range = Xs.max() - C
+    Range = Range.mask(Range == 0, Xs.max())
+    assert not np.any(Range.values == 0)
+    Xs = (Xs - C) / Range
+    return Xs, C, Range
+
+
 def make_dataset(S, T):
     Xs = pd.DataFrame()
     Ys = pd.DataFrame()
@@ -74,10 +91,8 @@ def make_dataset(S, T):
         Ys = pd.concat([Ys, ys])
 
     # Normalize
-    Min = Xs.min()
-    Range = Xs.max() - Xs.min()
-    Xs = (Xs - Min) / Range
-    return Xs, Ys, Min, Range
+    Xs, C, Range = norm_mat_mean(Xs)
+    return Xs, Ys, C, Range
 
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
@@ -92,7 +107,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(MAXN):
-    Xs, Ys, Min, Range = make_dataset(0, MAXN)
+    Xs, Ys, C, Range = make_dataset(0, MAXN)
 
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
@@ -104,29 +119,22 @@ def Train(MAXN):
     print y_data.size()
 
     for epoch in range(ITER):
-        # Forward pass
         y_pred = model(x_data)
-
-        # Compute loss
         loss = criterion(y_pred, y_data)
         print "====>", epoch, loss.data
-
-        # Zero gradients
         optimizer.zero_grad()
-        # perform backward pass
         loss.backward()
-        # update weights
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrxgl.pkl')
-    pickle.dump([Min, Range], open('checkpoint/params_lrxgl.norm', "w"))
+    pickle.dump([C, Range], open('checkpoint/params_lrxgl.norm', "w"))
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/params_lrxgl.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
+    [C, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    TXs = (TXs - Min) / Range
+    TXs = (TXs - C) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -163,11 +171,13 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
+    pickle.dump(percent, open('dat_xglmin.txt', "w"))
     plt.savefig("resxgl.png")
     return percent
 
 if __name__ == '__main__':
     init_dataset()
+    ITER = 4000
     print "dataset", dataset
-# Train(1700)
-    test(1709, 1999)
+    Train(1700)
+    test(1700, 2000)

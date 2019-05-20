@@ -111,18 +111,10 @@ def Train(START, END):
     print y_data.size()
 
     for epoch in range(ITER):
-        # Forward pass
         y_pred = model(x_data)
-
-        # Compute loss
         loss = criterion(y_pred, y_data)
-        # print "====>", epoch, loss.data
-
-        # Zero gradients
         optimizer.zero_grad()
-        # perform backward pass
         loss.backward()
-        # update weights
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrprior.pkl')

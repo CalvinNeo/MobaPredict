@@ -148,14 +148,14 @@ def generate_match(matchid):
     prior_rate = test_match_prior(matchid).item()
     prior_series = pd.Series([prior_rate] * l)
     hts1, hts2 = generate_hero_ts(matchid)
-    print "SSSHAPE", hts1.shape, hts2.shape, l
+    hts1.resize(l); hts2.resize(l)
+    # print "SSSHAPE", hts1.shape, hts2.shape, l
     priorts_series = pd.Series(hts1) - pd.Series(hts2)
 
     delta_gold = all_gold1 - all_gold2
     delta_lh = all_lh1 - all_lh2
     delta_xp = all_xp1 - all_xp2
     delta_die = dies1 - dies2
-    # print (delta_die == 0).all()
 
     radiant_win = d_match[d_match['match_id'] == matchid].loc[matchid, 'radiant_win']
     (R, ) =  delta_gold.shape # whose type is Series
@@ -168,26 +168,12 @@ def generate_match(matchid):
     for i in xrange(0, R - W):
         x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], 
             delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W], priorts_series[i:i+W]])
-        tx = pd.concat([priorts_series[i:i+W]])
-        tx = tx.reset_index(drop=True)
-        assert not np.isnan(tx.values).any()
-        print "i===", i
-        print "shape", tx.shape
-        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-            if i >= 90:
-                print tx
-                print txs
-        assert not np.isnan(txs.values).any()
-        txs = txs.append(tx, ignore_index=True)
         x = x.reset_index(drop=True) # Remove original index
         y = 1 if radiant_win else 0
         y = float(y)
         xs = xs.append(x, ignore_index=True)
         ys = ys.append(pd.Series(y), ignore_index=True)
 
-    assert not np.isnan(priorts_series.values).any()
-    assert not np.isnan(txs.values).any()
-    assert not np.isnan(xs.values).any()
     return xs, ys
 
 def make_dataset(S, T):
@@ -200,23 +186,12 @@ def make_dataset(S, T):
         Ys = pd.concat([Ys, ys])
 
     # Normalize
-    Min = Xs.min()
-    Range = Xs.max() - Xs.min()
-    # print "Check==="
-    # print Range, Min
-    # print "Check===2"
-    # print np.any(Range.values==0)
-    # print np.isnan(Xs).any()
-    # print "Check===where"
-    if np.any(Range.values == 0):
-        Xs = Xs - Min
-    else:
-        Xs = (Xs - Min) / Range
-    # print "Check===3"
-    # print np.isnan(Xs).any()
-    return Xs, Ys, Min, Range
-
-# https://blog.csdn.net/m0_37306360/article/details/79307818
+    C = Xs.mean()
+    Range = Xs.max() - C
+    Range = Range.mask(Range == 0, Xs.max())
+    assert not np.any(Range.values == 0)
+    Xs = (Xs - C) / Range
+    return Xs, Ys, C, Range
 
 class LR(torch.nn.Module):
     def __init__(self, in_dim, out):
@@ -235,30 +210,15 @@ def Train(MAXN, S = 0):
     criterion = torch.nn.BCELoss(size_average=False)
     optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
 
-    print 'Xs'
-    print Xs
-    print 'Ys'
-    print Ys
     x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
     y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
-    # x_data = torch.tensor(Xs.detach().numpy()).type('torch.FloatTensor')
-    # y_data = torch.tensor(Ys.detach().numpy()).type('torch.FloatTensor')
-    print x_data.size()
-    print y_data.size()
 
     for epoch in range(ITER):
-        # Forward pass
         y_pred = model(x_data)
-
-        # Compute loss
         loss = criterion(y_pred, y_data)
-        # print "====>", epoch, loss.data
-
-        # Zero gradients
+        print "====>", epoch, loss.data
         optimizer.zero_grad()
-        # perform backward pass
         loss.backward()
-        # update weights
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrkillpriorts.pkl')
@@ -269,10 +229,8 @@ def test_match(matchid):
     model.load_state_dict(torch.load('checkpoint/params_lrkillpriorts.pkl'))
     [Min, Range] = pickle.load(open('checkpoint/params_lrkillpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    if Range.values[0].item() == 0:
-        TXs = TXs - Min
-    else:
-        TXs = (TXs - Min) / Range
+    assert not np.any(Range.values == 0)
+    TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)

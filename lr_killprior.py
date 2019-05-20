@@ -6,10 +6,11 @@ from torchvision import transforms as T
 import matplotlib.pyplot as plt
 import pickle
 
-THRES = 2000
+THRES = 1000
 DIM = 6
 ITER = 400
 W = 3
+STEP = 0.00005
 
 dataset = ()
 
@@ -164,13 +165,12 @@ def make_dataset(S, T):
         Ys = pd.concat([Ys, ys])
 
     # Normalize
-    Min = Xs.min()
-    Range = Xs.max() - Xs.min()
-    if np.any(Range.values == 0):
-        Xs = Xs - Min
-    else:
-        Xs = (Xs - Min) / Range
-    return Xs, Ys, Min, Range
+    C = Xs.mean()
+    Range = Xs.max() - C
+    Range = Range.mask(Range == 0, Xs.max())
+    assert not np.any(Range.values == 0)
+    Xs = (Xs - C) / Range
+    return Xs, Ys, C, Range
     
 # https://blog.csdn.net/m0_37306360/article/details/79307818
 
@@ -189,32 +189,17 @@ def Train(MAXN):
 
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
+    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
 
-    print 'Xs'
-    print Xs
-    print 'Ys'
-    print Ys
     x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
     y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
-    # x_data = torch.tensor(Xs.detach().numpy()).type('torch.FloatTensor')
-    # y_data = torch.tensor(Ys.detach().numpy()).type('torch.FloatTensor')
-    print x_data.size()
-    print y_data.size()
 
     for epoch in range(ITER):
-        # Forward pass
         y_pred = model(x_data)
-
-        # Compute loss
         loss = criterion(y_pred, y_data)
-        # print "====>", epoch, loss.data
-
-        # Zero gradients
+        print "====>", epoch, loss.data
         optimizer.zero_grad()
-        # perform backward pass
         loss.backward()
-        # update weights
         optimizer.step()
 
     torch.save(model.state_dict(), 'checkpoint/params_lrkillprior.pkl')
@@ -225,10 +210,9 @@ def test_match(matchid):
     model.load_state_dict(torch.load('checkpoint/params_lrkillprior.pkl'))
     [Min, Range] = pickle.load(open('checkpoint/params_lrkillprior.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    if Range.values[0].item() == 0:
-        TXs = TXs - Min
-    else:
-        TXs = (TXs - Min) / Range
+    
+    assert not np.any(Range.values == 0)
+    TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -269,6 +253,10 @@ def test(S, E):
     return percent
 
 if __name__ == '__main__':
+    THRES = 4500
     init_dataset()
-    Train(100)
-    test(110, 115)
+    ITER = 4000
+    TRAIN = 3500
+    TEST = 300
+    Train(TRAIN)
+    print test(TRAIN, TRAIN+TEST)
