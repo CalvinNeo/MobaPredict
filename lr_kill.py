@@ -10,6 +10,7 @@ THRES = 2000
 DIM = 5
 ITER = 400
 W = 3
+STEP = 0.00005
 
 dataset = ()
 
@@ -156,14 +157,13 @@ class LR(torch.nn.Module):
 def Train(MAXN):
     Xs, Ys, Min, Range = make_dataset(0, MAXN)
 
+    loss_map = np.array([])
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
+    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
 
     x_data = torch.tensor(np.array(Xs)).type('torch.FloatTensor')
     y_data = torch.tensor(np.array(Ys)).type('torch.FloatTensor')
-    print x_data.size()
-    print y_data.size()
 
     for epoch in range(ITER):
         y_pred = model(x_data)
@@ -172,14 +172,19 @@ def Train(MAXN):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/params_lrkill.pkl')
-    pickle.dump([Min, Range], open('checkpoint/params_lrkill.norm', "w"))
+    torch.save(model.state_dict(), 'checkpoint/lr_kill.pkl')
+    pickle.dump([Min, Range], open('checkpoint/lr_kill.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/lr_kill.loss', "w"))
+    plt.plot(loss_map)
+    plt.savefig("loss_kill.png")
+    plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lrkill.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/params_lrkill.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lr_kill.pkl'))
+    [Min, Range] = pickle.load(open('checkpoint/lr_kill.norm', "r"))
     TXs, Tys = generate_match(matchid)
     if Range.values[0].item() == 0:
         TXs = TXs - Min
@@ -196,7 +201,6 @@ def test_match(matchid):
     yO = yO.astype(np.int64)
     loss = (yT == yO).astype(np.int64)
     res = np.concatenate((yT, yO, loss), axis=1)
-    np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
     return loss
 
 def add_vec(a, b):
@@ -221,7 +225,9 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    plt.savefig("reskill.png")
+    pickle.dump(percent, open('checkpoint/lr_kill.percent', 'w'))
+    plt.savefig("res_lr_kill.png")
+    plt.close()
     return percent
 
 if __name__ == '__main__':

@@ -10,6 +10,7 @@ THRES = 2000
 DIM = 7
 ITER = 400
 W = 3
+STEP = 0.00005
 
 dataset = ()
 
@@ -63,8 +64,8 @@ def test_match_prior(matchid):
     d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
     len_heros = len(d_heros) + 1
     model = LR(len_heros * 2, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lrprior.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/params_lrprior.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lr_prior.pkl'))
+    [Min, Range] = pickle.load(open('checkpoint/lr_prior.norm', "r"))
     TXs, Tys = generate_hero(matchid)
     TXs = (TXs - Min) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
@@ -118,7 +119,7 @@ def generate_hero_ts(match_id):
     global dataset
     d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
     len_heros = len(d_heros) + 1
-    ts = pickle.load(open('checkpoint/params_lrprior.pos', "r"))
+    ts = pickle.load(open('checkpoint/lr_prior.pos', "r"))
     t1 = np.array([]); t2 = np.array([])
     t1.resize(ts.shape[0]); t2.resize(ts.shape[0])
 
@@ -206,9 +207,10 @@ class LR(torch.nn.Module):
 def Train(MAXN, S = 0):
     Xs, Ys, Min, Range = make_dataset(S, MAXN)
 
+    loss_map = np.array([])
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
+    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
 
     x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
     y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
@@ -220,14 +222,19 @@ def Train(MAXN, S = 0):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/params_lrkillpriorts.pkl')
-    pickle.dump([Min, Range], open('checkpoint/params_lrkillpriorts.norm', "w"))
+    torch.save(model.state_dict(), 'checkpoint/lr_killpriorts.pkl')
+    pickle.dump([Min, Range], open('checkpoint/lr_killpriorts.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/lr_killpriorts.loss', "w"))
+    plt.plot(loss_map)
+    plt.savefig("loss_killpriorts.png")
+    plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lrkillpriorts.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/params_lrkillpriorts.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lr_killpriorts.pkl'))
+    [Min, Range] = pickle.load(open('checkpoint/lr_killpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
     assert not np.any(Range.values == 0)
     TXs = (TXs - Min) / Range
@@ -242,7 +249,7 @@ def test_match(matchid):
     yO = yO.astype(np.int64)
     loss = (yT == yO).astype(np.int64)
     res = np.concatenate((yT, yO, loss), axis=1)
-    np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
+    # np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
     return loss
 
 def add_vec(a, b):
@@ -267,7 +274,9 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    plt.savefig("reskillpriorts.png")
+    pickle.dump(percent, open('checkpoint/lr_killpriorts.percent', 'w'))
+    plt.savefig("res_lr_killpriorts.png")
+    plt.close()
     return percent
 
 if __name__ == '__main__':

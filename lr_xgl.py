@@ -9,6 +9,7 @@ import pickle
 THRES = 2000
 DIM = 3
 ITER = 400
+STEP = 0.00005
 
 dataset = ()
 
@@ -109,9 +110,10 @@ class LR(torch.nn.Module):
 def Train(MAXN):
     Xs, Ys, C, Range = make_dataset(0, MAXN)
 
+    loss_map = np.array([])
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = 0.0001)
+    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
 
     x_data = torch.tensor(np.array(Xs)).type('torch.FloatTensor')
     y_data = torch.tensor(np.array(Ys)).type('torch.FloatTensor')
@@ -125,14 +127,19 @@ def Train(MAXN):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/params_lrxgl.pkl')
-    pickle.dump([C, Range], open('checkpoint/params_lrxgl.norm', "w"))
+    torch.save(model.state_dict(), 'checkpoint/lr_xgl.pkl')
+    pickle.dump([C, Range], open('checkpoint/lr_xgl.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/lr_xgl.loss', "w"))
+    plt.plot(loss_map)
+    plt.savefig("loss_xgl.png")
+    plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/params_lrxgl.pkl'))
-    [C, Range] = pickle.load(open('checkpoint/params_lrxgl.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lr_xgl.pkl'))
+    [C, Range] = pickle.load(open('checkpoint/lr_xgl.norm', "r"))
     TXs, Tys = generate_match(matchid)
     TXs = (TXs - C) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
@@ -146,7 +153,6 @@ def test_match(matchid):
     yO = yO.astype(np.int64)
     loss = (yT == yO).astype(np.int64)
     res = np.concatenate((yT, yO, loss), axis=1)
-    np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
     return loss
 
 def add_vec(a, b):
@@ -171,8 +177,9 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    pickle.dump(percent, open('dat_xglmin.txt', "w"))
-    plt.savefig("resxgl.png")
+    pickle.dump(percent, open('checkpoint/lr_xgl.percent', 'w'))
+    plt.savefig("res_lr_xgl.png")
+    plt.close()
     return percent
 
 if __name__ == '__main__':

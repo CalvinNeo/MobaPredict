@@ -5,9 +5,10 @@ import torch
 from torchvision import transforms as T
 import matplotlib.pyplot as plt
 import pickle
+import xgboost as xgb
 
-THRES = 1000
-DIM = 6
+THRES = 2000
+DIM = 7
 ITER = 400
 W = 3
 STEP = 0.00005
@@ -16,19 +17,19 @@ dataset = ()
 
 def init_dataset():
     global dataset
-    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/match.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_match = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/player_time.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_time = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/teamfights.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_fight = pd.concat(chunks)
 
-    chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 50)
+    chunks = pd.read_csv('dota-2-matches/teamfights_players.csv', sep=',', skiprows=0, chunksize = 200)
     chunks = itertools.takewhile(lambda chunk: int(chunk['match_id'].iloc[-1]) < THRES, chunks)
     d_fightpls = pd.concat(chunks)
 
@@ -59,6 +60,16 @@ def generate_hero(match_id):
         h[items[1] + len_heros] = 1
     
     return pd.Series(h), radiant_win
+
+class LR(torch.nn.Module):
+    def __init__(self, in_dim, out):
+        super(LR, self).__init__()
+        self.linear = torch.nn.Linear(in_dim, out)
+        self.sigmoid = torch.nn.Sigmoid()
+ 
+    def forward(self, x):
+        y_pred = self.sigmoid(self.linear(x))
+        return y_pred
 
 def test_match_prior(matchid):
     d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
@@ -115,9 +126,26 @@ def generate_deaths(match_id):
     # ts1 and ts2 may have mismatched length.
     return ts1, ts2
 
+def generate_hero_ts(match_id):
+    global dataset
+    d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
+    len_heros = len(d_heros) + 1
+    ts = pickle.load(open('checkpoint/lr_prior.pos', "r"))
+    t1 = np.array([]); t2 = np.array([])
+    t1.resize(ts.shape[0]); t2.resize(ts.shape[0])
+
+    allh1 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] < 5]
+    allh2 = d_players.loc[d_players['match_id'] == match_id].loc[lambda r: r['player_slot'] >= 128]
+    for items in allh1['hero_id'].iteritems():
+        t1 += ts[:, items[1]]
+    for items in allh2['hero_id'].iteritems():
+        t2 += ts[:, items[1]]
+    return t1, t2
+
 def generate_match(matchid):
     global dataset
     d_match, d_time, d_fight, d_fightpls, d_players, d_heros = dataset
+    # Sum up all heros' xp/gold/lh
     all_gold1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(2, 5, 3)].sum(axis = 1)
     all_lh1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(3, 5, 3)].sum(axis = 1)
     all_xp1 = d_time.loc[d_time['match_id'] == matchid].ix[:, range_count(4, 5, 3)].sum(axis = 1)
@@ -131,22 +159,27 @@ def generate_match(matchid):
     time_series = pd.Series(np.arange(l))
     prior_rate = test_match_prior(matchid).item()
     prior_series = pd.Series([prior_rate] * l)
+    hts1, hts2 = generate_hero_ts(matchid)
+    hts1.resize(l); hts2.resize(l)
+    # print "SSSHAPE", hts1.shape, hts2.shape, l
+    priorts_series = pd.Series(hts1) - pd.Series(hts2)
 
     delta_gold = all_gold1 - all_gold2
     delta_lh = all_lh1 - all_lh2
     delta_xp = all_xp1 - all_xp2
     delta_die = dies1 - dies2
-    # print (delta_die == 0).all()
 
     radiant_win = d_match[d_match['match_id'] == matchid].loc[matchid, 'radiant_win']
     (R, ) =  delta_gold.shape # whose type is Series
+    assert R == l
     # xs = pd.DataFrame(columns = map(lambda i: "In" + str(i), range(3 * W)))
     # ys = pd.DataFrame(columns = ["T"])
     xs = pd.DataFrame()
     ys = pd.DataFrame()
+    txs = pd.DataFrame()
     for i in xrange(0, R - W):
         x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], 
-            delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W]])
+            delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W], priorts_series[i:i+W]])
         x = x.reset_index(drop=True) # Remove original index
         y = 1 if radiant_win else 0
         y = float(y)
@@ -171,66 +204,41 @@ def make_dataset(S, T):
     assert not np.any(Range.values == 0)
     Xs = (Xs - C) / Range
     return Xs, Ys, C, Range
-    
-# https://blog.csdn.net/m0_37306360/article/details/79307818
 
-class LR(torch.nn.Module):
-    def __init__(self, in_dim, out):
-        super(LR, self).__init__()
-        self.linear = torch.nn.Linear(in_dim, out)
-        self.sigmoid = torch.nn.Sigmoid()
- 
-    def forward(self, x):
-        y_pred = self.sigmoid(self.linear(x))
-        return y_pred
 
-def Train(MAXN):
-    Xs, Ys, Min, Range = make_dataset(0, MAXN)
+def Train(MAXN, S = 0):
+    Xs, Ys, Min, Range = make_dataset(S, MAXN)
 
     loss_map = np.array([])
-    model = LR(DIM * W, 1)
-    criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
+    model = xgb.XGBClassifier()
 
-    x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
-    y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
+    model.fit(Xs.values, Ys.values)
 
-    for epoch in range(ITER):
-        y_pred = model(x_data)
-        loss = criterion(y_pred, y_data)
-        print "====>", epoch, loss.data
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        loss_map = np.append(loss_map, loss.data)
-
-    torch.save(model.state_dict(), 'checkpoint/lr_killprior.pkl')
-    pickle.dump([Min, Range], open('checkpoint/lr_killprior.norm', "w"))
-    pickle.dump(loss_map, open('checkpoint/lr_killprior.loss', "w"))
+    pickle.dump(model, open('checkpoint/xgboost_killpriorts.pkl', "w"))
+    pickle.dump([Min, Range], open('checkpoint/xgboost_killpriorts.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/xgboost_killpriorts.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_killprior.png")
+    plt.savefig("loss_xgboost_killpriorts.png")
     plt.close()
 
 def test_match(matchid):
-    model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/lr_killprior.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/lr_killprior.norm', "r"))
+    model = pickle.load(open('checkpoint/xgboost_killpriorts.pkl', "r"))
+    [Min, Range] = pickle.load(open('checkpoint/xgboost_killpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    
     assert not np.any(Range.values == 0)
     TXs = (TXs - Min) / Range
-    tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
-    ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
-    y_pred = model(tx_data)
+    tx_data = np.array(TXs)
+    ty_data = np.array(Tys)
+    y_pred = model.predict(tx_data)
 
-    yT = ty_data.detach().numpy()
-    yO = y_pred.detach().numpy()
+    yT = ty_data
+    yO = y_pred
     yO = np.vectorize(lambda x: 1 if x > 0.5 else 0)(yO)
     yT = yT.astype(np.int64)
     yO = yO.astype(np.int64)
+    yO = yO.reshape(yT.shape)
     loss = (yT == yO).astype(np.int64)
     res = np.concatenate((yT, yO, loss), axis=1)
-    # np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
     return loss
 
 def add_vec(a, b):
@@ -255,16 +263,14 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    pickle.dump(percent, open('checkpoint/lr_killprior.percent', 'w'))
-    plt.savefig("res_lr_killprior.png")
+    plt.savefig("res_xgboost_killpriorts.png")
     plt.close()
     return percent
 
 if __name__ == '__main__':
-    THRES = 4500
     init_dataset()
-    ITER = 4000
-    TRAIN = 3500
-    TEST = 300
-    Train(TRAIN)
-    print test(TRAIN, TRAIN+TEST)
+    # Train(100)
+    print test(110, 115)
+    # for i in xrange(1500, 1700):
+    #     X,Y = generate_hero_ts(0)
+    #     print X
