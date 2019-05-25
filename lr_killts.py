@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import pickle
 
 THRES = 2000
-DIM = 7
-ITER = 400
+DIM = 6
+ITER = 2000
 W = 3
 STEP = 0.00005
 
@@ -146,8 +146,6 @@ def generate_match(matchid):
     dies1.resize(l); dies2.resize(l)
     dies1 = pd.Series(dies1); dies2 = pd.Series(dies2)
     time_series = pd.Series(np.arange(l))
-    prior_rate = test_match_prior(matchid).item()
-    prior_series = pd.Series([prior_rate] * l)
     hts1, hts2 = generate_hero_ts(matchid)
     hts1.resize(l); hts2.resize(l)
     # print "SSSHAPE", hts1.shape, hts2.shape, l
@@ -168,7 +166,7 @@ def generate_match(matchid):
     txs = pd.DataFrame()
     for i in xrange(0, R - W):
         x = pd.concat([delta_gold[i:i+W], delta_lh[i:i+W], delta_xp[i:i+W], 
-            delta_die[i:i+W], time_series[i:i+W], prior_series[i:i+W], priorts_series[i:i+W]])
+            delta_die[i:i+W], time_series[i:i+W], priorts_series[i:i+W]])
         x = x.reset_index(drop=True) # Remove original index
         y = 1 if radiant_win else 0
         y = float(y)
@@ -224,17 +222,17 @@ def Train(MAXN, S = 0):
         optimizer.step()
         loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/lr_killpriorts.pkl')
-    pickle.dump([C, Range], open('checkpoint/lr_killpriorts.norm', "w"))
-    pickle.dump(loss_map, open('checkpoint/lr_killpriorts.loss', "w"))
+    torch.save(model.state_dict(), 'checkpoint/lr_killts.pkl')
+    pickle.dump([C, Range], open('checkpoint/lr_killts.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/lr_killts.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_lr_killpriorts.png")
+    plt.savefig("loss_lr_killts.png")
     plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/lr_killpriorts.pkl'))
-    [C, Range] = pickle.load(open('checkpoint/lr_killpriorts.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lr_killts.pkl'))
+    [C, Range] = pickle.load(open('checkpoint/lr_killts.norm', "r"))
     TXs, Tys = generate_match(matchid)
     assert not np.any(Range.values == 0)
     TXs = (TXs - C) / Range
@@ -274,15 +272,15 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    pickle.dump(percent, open('checkpoint/lr_killpriorts.percent', 'w'))
-    plt.savefig("res_lr_killpriorts.png")
+    pickle.dump(percent, open('checkpoint/lr_killts.percent', 'w'))
+    plt.savefig("res_lr_killts.png")
     plt.close()
     return percent
 
 if __name__ == '__main__':
     init_dataset()
-    # Train(100)
-    # test(110, 115)
-    for i in xrange(1500, 1700):
-        X,Y = generate_hero_ts(0)
-        print X
+    Train(1000)
+    print test(1000, 1100)
+    # for i in xrange(1500, 1700):
+    #     X,Y = generate_hero_ts(0)
+    #     print X

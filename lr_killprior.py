@@ -65,9 +65,9 @@ def test_match_prior(matchid):
     len_heros = len(d_heros) + 1
     model = LR(len_heros * 2, 1)
     model.load_state_dict(torch.load('checkpoint/lr_prior.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/lr_prior.norm', "r"))
+    [C, Range] = pickle.load(open('checkpoint/lr_prior.norm', "r"))
     TXs, Tys = generate_hero(matchid)
-    TXs = (TXs - Min) / Range
+    TXs = (TXs - C) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)
@@ -185,7 +185,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(MAXN):
-    Xs, Ys, Min, Range = make_dataset(0, MAXN)
+    Xs, Ys, C, Range = make_dataset(0, MAXN)
 
     loss_map = np.array([])
     model = LR(DIM * W, 1)
@@ -205,20 +205,20 @@ def Train(MAXN):
         loss_map = np.append(loss_map, loss.data)
 
     torch.save(model.state_dict(), 'checkpoint/lr_killprior.pkl')
-    pickle.dump([Min, Range], open('checkpoint/lr_killprior.norm', "w"))
+    pickle.dump([C, Range], open('checkpoint/lr_killprior.norm', "w"))
     pickle.dump(loss_map, open('checkpoint/lr_killprior.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_killprior.png")
+    plt.savefig("loss_lr_killprior.png")
     plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/lr_killprior.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/lr_killprior.norm', "r"))
+    [C, Range] = pickle.load(open('checkpoint/lr_killprior.norm', "r"))
     TXs, Tys = generate_match(matchid)
     
     assert not np.any(Range.values == 0)
-    TXs = (TXs - Min) / Range
+    TXs = (TXs - C) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)

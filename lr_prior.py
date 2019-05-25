@@ -56,9 +56,9 @@ def make_dataset(S, T):
         Ys = Ys.append(pd.Series([y]), ignore_index=True)
 
     # Normalize
-    Min = 0
+    C = 0
     Range = 1
-    return Xs, Ys, Min, Range
+    return Xs, Ys, C, Range
 
 def generate_hero_time(S, T):
     d_players, d_match, d_heros = dataset
@@ -158,6 +158,7 @@ def test(S, E):
         totl += l
 
     percent = totl * 1.0 / (E - S)
+    pickle.dump(percent, open('checkpoint/lr_prior.percent', 'w'))
     return percent
 
 if __name__ == '__main__':
@@ -165,4 +166,4 @@ if __name__ == '__main__':
     Train(35000, 45000)
     # print test(18001, 19990)
     # print generate_hero_time(0, 100)
-    print generate_hero_time(35000, 45000)
+    # print generate_hero_time(35000, 45000)

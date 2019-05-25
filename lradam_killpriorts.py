@@ -10,7 +10,7 @@ THRES = 2000
 DIM = 7
 ITER = 400
 W = 3
-STEP = 0.00005
+STEP = 0.001
 
 dataset = ()
 
@@ -210,7 +210,7 @@ def Train(MAXN, S = 0):
     loss_map = np.array([])
     model = LR(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
+    optimizer = torch.optim.Adam(model.parameters(), lr = STEP)
 
     x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
     y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
@@ -224,17 +224,17 @@ def Train(MAXN, S = 0):
         optimizer.step()
         loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/lr_killpriorts.pkl')
-    pickle.dump([C, Range], open('checkpoint/lr_killpriorts.norm', "w"))
-    pickle.dump(loss_map, open('checkpoint/lr_killpriorts.loss', "w"))
+    torch.save(model.state_dict(), 'checkpoint/lradam_killpriorts.pkl')
+    pickle.dump([C, Range], open('checkpoint/lradam_killpriorts.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/lradam_killpriorts.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_lr_killpriorts.png")
+    plt.savefig("loss_lradam_killpriorts.png")
     plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/lr_killpriorts.pkl'))
-    [C, Range] = pickle.load(open('checkpoint/lr_killpriorts.norm', "r"))
+    model.load_state_dict(torch.load('checkpoint/lradam_killpriorts.pkl'))
+    [C, Range] = pickle.load(open('checkpoint/lradam_killpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
     assert not np.any(Range.values == 0)
     TXs = (TXs - C) / Range
@@ -274,15 +274,20 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    pickle.dump(percent, open('checkpoint/lr_killpriorts.percent', 'w'))
-    plt.savefig("res_lr_killpriorts.png")
+    pickle.dump(percent, open('checkpoint/lradam_killpriorts.percent', 'w'))
+    plt.savefig("res_lradam_killpriorts.png")
     plt.close()
     return percent
 
 if __name__ == '__main__':
+    THRES = 4500
+    ITER = 4000
+    TRAIN = 3500
+    TEST = 600
     init_dataset()
-    # Train(100)
-    # test(110, 115)
-    for i in xrange(1500, 1700):
-        X,Y = generate_hero_ts(0)
-        print X
+    Train(TRAIN)
+    test(TRAIN, TRAIN+TEST)
+
+    # for i in xrange(1500, 1700):
+    #     X,Y = generate_hero_ts(0)
+    #     print X

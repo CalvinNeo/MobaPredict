@@ -263,6 +263,7 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
+    pickle.dump(percent, open('checkpoint/xgboost_killpriorts.percent', 'w'))
     plt.savefig("res_xgboost_killpriorts.png")
     plt.close()
     return percent

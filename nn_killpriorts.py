@@ -194,15 +194,17 @@ def make_dataset(S, T):
     Xs = (Xs - C) / Range
     return Xs, Ys, C, Range
 
-class LR(torch.nn.Module):
-    def __init__(self, in_dim, out):
-        super(LR, self).__init__()
-        self.linear = torch.nn.Linear(in_dim, out)
-        self.sigmoid = torch.nn.Sigmoid()
- 
-    def forward(self, x):
-        y_pred = self.sigmoid(self.linear(x))
-        return y_pred
+class Net(torch.nn.Module):
+    def __init__(self, n_feature, n_hidden, n_output): 
+        super(Net, self).__init__() 
+        self.hidden = torch.nn.Linear(n_feature, n_hidden)
+        self.predict = torch.nn.Linear(n_hidden, n_output)
+  
+    def forward(self, x): 
+        x = F.relu(self.hidden(x))
+        x = self.predict(x) 
+        return x 
+
 
 def Train(MAXN, S = 0):
     Xs, Ys, C, Range = make_dataset(S, MAXN)

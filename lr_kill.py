@@ -155,7 +155,7 @@ class LR(torch.nn.Module):
         return y_pred
 
 def Train(MAXN):
-    Xs, Ys, Min, Range = make_dataset(0, MAXN)
+    Xs, Ys, C, Range = make_dataset(0, MAXN)
 
     loss_map = np.array([])
     model = LR(DIM * W, 1)
@@ -175,21 +175,18 @@ def Train(MAXN):
         loss_map = np.append(loss_map, loss.data)
 
     torch.save(model.state_dict(), 'checkpoint/lr_kill.pkl')
-    pickle.dump([Min, Range], open('checkpoint/lr_kill.norm', "w"))
+    pickle.dump([C, Range], open('checkpoint/lr_kill.norm', "w"))
     pickle.dump(loss_map, open('checkpoint/lr_kill.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_kill.png")
+    plt.savefig("loss_lr_kill.png")
     plt.close()
 
 def test_match(matchid):
     model = LR(DIM * W, 1)
     model.load_state_dict(torch.load('checkpoint/lr_kill.pkl'))
-    [Min, Range] = pickle.load(open('checkpoint/lr_kill.norm', "r"))
+    [C, Range] = pickle.load(open('checkpoint/lr_kill.norm', "r"))
     TXs, Tys = generate_match(matchid)
-    if Range.values[0].item() == 0:
-        TXs = TXs - Min
-    else:
-        TXs = (TXs - Min) / Range
+    TXs = (TXs - C) / Range
     tx_data = torch.tensor(np.array(TXs)).type('torch.FloatTensor')
     ty_data = torch.tensor(np.array(Tys)).type('torch.FloatTensor')
     y_pred = model(tx_data)

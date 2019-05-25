@@ -133,7 +133,7 @@ def Train(MAXN):
     pickle.dump([C, Range], open('checkpoint/lr_xgl.norm', "w"))
     pickle.dump(loss_map, open('checkpoint/lr_xgl.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_xgl.png")
+    plt.savefig("loss_lr_xgl.png")
     plt.close()
 
 def test_match(matchid):
