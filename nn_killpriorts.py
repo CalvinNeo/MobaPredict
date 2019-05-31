@@ -5,12 +5,13 @@ import torch
 from torchvision import transforms as T
 import matplotlib.pyplot as plt
 import pickle
+import torch.nn.functional as F
 
-THRES = 2000
+THRES = 4000
 DIM = 7
-ITER = 400
+ITER = 1000
 W = 3
-STEP = 0.00005
+STEP = 0.01
 
 dataset = ()
 
@@ -194,25 +195,36 @@ def make_dataset(S, T):
     Xs = (Xs - C) / Range
     return Xs, Ys, C, Range
 
+class LR(torch.nn.Module):
+    def __init__(self, in_dim, out):
+        super(LR, self).__init__()
+        self.linear = torch.nn.Linear(in_dim, out)
+        self.sigmoid = torch.nn.Sigmoid()
+ 
+    def forward(self, x):
+        y_pred = self.sigmoid(self.linear(x))
+        return y_pred
+
 class Net(torch.nn.Module):
-    def __init__(self, n_feature, n_hidden, n_output): 
+    def __init__(self, n_feature, n_output, n_hidden = 10): 
         super(Net, self).__init__() 
         self.hidden = torch.nn.Linear(n_feature, n_hidden)
-        self.predict = torch.nn.Linear(n_hidden, n_output)
+        self.out = torch.nn.Linear(n_hidden, n_output)
+        # self.sigmoid = torch.nn.Sigmoid()
   
     def forward(self, x): 
-        x = F.relu(self.hidden(x))
-        x = self.predict(x) 
-        return x 
+        x = self.hidden(x)
+        x = F.sigmoid(self.out(x))
+        return x
 
 
 def Train(MAXN, S = 0):
     Xs, Ys, C, Range = make_dataset(S, MAXN)
 
     loss_map = np.array([])
-    model = LR(DIM * W, 1)
+    model = Net(DIM * W, 1)
     criterion = torch.nn.BCELoss(size_average=False)
-    optimizer = torch.optim.SGD(model.parameters(), lr = STEP)
+    optimizer = torch.optim.Adam(model.parameters(), lr = STEP)
 
     x_data = torch.from_numpy(Xs.values).type('torch.FloatTensor')
     y_data = torch.from_numpy(Ys.values).type('torch.FloatTensor')
@@ -226,17 +238,17 @@ def Train(MAXN, S = 0):
         optimizer.step()
         loss_map = np.append(loss_map, loss.data)
 
-    torch.save(model.state_dict(), 'checkpoint/lr_killpriorts.pkl')
-    pickle.dump([C, Range], open('checkpoint/lr_killpriorts.norm', "w"))
-    pickle.dump(loss_map, open('checkpoint/lr_killpriorts.loss', "w"))
+    torch.save(model.state_dict(), 'checkpoint/nn_killpriorts.pkl')
+    pickle.dump([C, Range], open('checkpoint/nn_killpriorts.norm', "w"))
+    pickle.dump(loss_map, open('checkpoint/nn_killpriorts.loss', "w"))
     plt.plot(loss_map)
-    plt.savefig("loss_lr_killpriorts.png")
+    plt.savefig("loss_nn_killpriorts.png")
     plt.close()
 
 def test_match(matchid):
-    model = LR(DIM * W, 1)
-    model.load_state_dict(torch.load('checkpoint/lr_killpriorts.pkl'))
-    [C, Range] = pickle.load(open('checkpoint/lr_killpriorts.norm', "r"))
+    model = Net(DIM * W, 1)
+    model.load_state_dict(torch.load('checkpoint/nn_killpriorts.pkl'))
+    [C, Range] = pickle.load(open('checkpoint/nn_killpriorts.norm', "r"))
     TXs, Tys = generate_match(matchid)
     assert not np.any(Range.values == 0)
     TXs = (TXs - C) / Range
@@ -251,7 +263,6 @@ def test_match(matchid):
     yO = yO.astype(np.int64)
     loss = (yT == yO).astype(np.int64)
     res = np.concatenate((yT, yO, loss), axis=1)
-    # np.savetxt(open("test_match/{}.txt".format(matchid), "w"), res, fmt = "%d")
     return loss
 
 def add_vec(a, b):
@@ -276,15 +287,16 @@ def test(S, E):
 
     percent = totl.astype(np.float64) / toth.astype(np.float64)
     plt.plot(percent)
-    pickle.dump(percent, open('checkpoint/lr_killpriorts.percent', 'w'))
-    plt.savefig("res_lr_killpriorts.png")
+    pickle.dump(percent, open('checkpoint/nn_killpriorts.percent', 'w'))
+    plt.savefig("res_nn_killpriorts.png")
     plt.close()
     return percent
 
 if __name__ == '__main__':
     init_dataset()
-    # Train(100)
-    # test(110, 115)
-    for i in xrange(1500, 1700):
-        X,Y = generate_hero_ts(0)
-        print X
+    TRAIN = 3000
+    Train(TRAIN)
+    test(TRAIN, TRAIN+200)
+    # for i in xrange(1500, 1700):
+    #     X,Y = generate_hero_ts(0)
+    #     print X

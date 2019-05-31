@@ -10,7 +10,7 @@ THRES = 2000
 DIM = 7
 ITER = 400
 W = 3
-STEP = 0.001
+STEP = 0.01
 
 dataset = ()
 

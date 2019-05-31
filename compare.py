@@ -15,6 +15,7 @@ lr_killpriorts = importlib.import_module('lr_killpriorts')
 lr_killts = importlib.import_module('lr_killts')
 xgboost_killpriorts = importlib.import_module('xgboost_killpriorts')
 lradam_killpriorts = importlib.import_module('lradam_killpriorts')
+nn_killpriorts = importlib.import_module('nn_killpriorts')
 
 THRES = 4500
 ITER = 4000
@@ -31,44 +32,50 @@ print "== lr_prior"
 lr_xgl.THRES=THRES
 lr_xgl.ITER=ITER
 lr_xgl.init_dataset()
-lr_xgl.Train(TRAIN)
+# lr_xgl.Train(TRAIN)
 print "== lr_xgl"
 
 lr_kill.THRES=THRES
 lr_kill.ITER=ITER
 lr_kill.init_dataset()
-lr_kill.Train(TRAIN)
+# lr_kill.Train(TRAIN)
 print "== lr_kill"
 
 lr_killprior.THRES=THRES
 lr_killprior.ITER=ITER
 lr_killprior.init_dataset()
-lr_killprior.Train(TRAIN)
+# lr_killprior.Train(TRAIN)
 print "== lr_killprior"
 
 lr_killpriorts.THRES=THRES
 lr_killpriorts.ITER=ITER
 lr_killpriorts.init_dataset()
-lr_killpriorts.Train(TRAIN)
+# lr_killpriorts.Train(TRAIN)
 print "== lr_killpriorts"
 
 xgboost_killpriorts.THRES=THRES
 xgboost_killpriorts.ITER=ITER
 xgboost_killpriorts.init_dataset()
-xgboost_killpriorts.Train(TRAIN)
+# xgboost_killpriorts.Train(TRAIN)
 print "== xgboost_killpriorts"
 
 lr_killts.THRES=THRES
 lr_killts.ITER=ITER
 lr_killts.init_dataset()
-lr_killpriorts.Train(TRAIN)
+# lr_killpriorts.Train(TRAIN)
 print "== lr_killts"
 
 lradam_killpriorts.THRES=THRES
 lradam_killpriorts.ITER=ITER
 lradam_killpriorts.init_dataset()
-lradam_killpriorts.Train(TRAIN)
+# lradam_killpriorts.Train(TRAIN)
 print "== lradam_killpriorts"
+
+nn_killpriorts.THRES=THRES
+nn_killpriorts.ITER=ITER
+nn_killpriorts.init_dataset()
+nn_killpriorts.Train(TRAIN)
+print "== nn_killpriorts"
 
 percent_lr_xgl = lr_xgl.test(TRAIN, TRAIN+TEST)
 percent_lr_kill = lr_kill.test(TRAIN, TRAIN+TEST)
@@ -79,6 +86,7 @@ percent_lr_prior = lr_prior.test(TRAIN, TRAIN+TEST)
 percent_lr_prior = np.array([percent_lr_prior[0]] * 90)
 percent_lr_killts = lr_killts.test(TRAIN, TRAIN+TEST)
 percent_lradam_killpriorts = lradam_killpriorts.test(TRAIN, TRAIN+TEST)
+percent_nn_killpriorts = nn_killpriorts.test(TRAIN, TRAIN+TEST)
 
 print percent_lr_xgl
 print percent_lr_kill
@@ -88,6 +96,7 @@ print percent_xgboost_killpriorts
 print percent_lr_prior
 print percent_lr_killts
 print percent_lradam_killpriorts
+print percent_nn_killpriorts
 
 plt.plot(np.array([0.5] * 90), 'c--')
 plt.plot(np.array([0.8] * 90), 'c--')
